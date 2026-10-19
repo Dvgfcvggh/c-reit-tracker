@@ -27,6 +27,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { DailyChart } from "@/components/daily-chart"
 import {
   assess,
   checklist,
@@ -138,7 +139,13 @@ function YieldBreakdown({ product, view }: { product: Product; view: YieldView }
   )
 }
 
-function ProductCards({ products }: { products: Product[] }) {
+function ProductCards({
+  products,
+  onOpenChart,
+}: {
+  products: Product[]
+  onOpenChart: (code: string) => void
+}) {
   return (
     <div className="space-y-3 lg:hidden">
       {products.map((product) => {
@@ -149,7 +156,13 @@ function ProductCards({ products }: { products: Product[] }) {
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="text-xs tabular-nums text-muted-foreground">{product.code}</div>
-                <h3 className="font-medium">{product.expandedName}</h3>
+                <button
+                  type="button"
+                  className="text-left font-medium underline-offset-2 hover:underline"
+                  onClick={() => onOpenChart(product.code)}
+                >
+                  {product.expandedName}
+                </button>
                 {product.shortName !== product.expandedName ? (
                   <p className="text-xs text-muted-foreground">场内简称 {product.shortName}</p>
                 ) : null}
@@ -181,10 +194,17 @@ function ProductCards({ products }: { products: Product[] }) {
                 </dd>
               </div>
             </dl>
-            <div className="mt-3 text-sm">
+            <div className="mt-3 text-sm" onClick={(event) => event.stopPropagation()}>
               <div className="text-xs text-muted-foreground">年化分派率</div>
               <YieldCell product={product} />
             </div>
+            <button
+              type="button"
+              className="mt-3 text-sm underline underline-offset-2"
+              onClick={() => onOpenChart(product.code)}
+            >
+              日K和成交量
+            </button>
             <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-sm">
               {product.manager?.sourceUrl ? (
                 <a className="underline underline-offset-2" href={product.manager.sourceUrl} target="_blank" rel="noreferrer">
@@ -204,7 +224,13 @@ function ProductCards({ products }: { products: Product[] }) {
   )
 }
 
-function ProductTable({ products }: { products: Product[] }) {
+function ProductTable({
+  products,
+  onOpenChart,
+}: {
+  products: Product[]
+  onOpenChart: (code: string) => void
+}) {
   return (
     <Table>
       <TableHeader>
@@ -226,7 +252,7 @@ function ProductTable({ products }: { products: Product[] }) {
           const quote = product.quote
           const noClose = quote.close == null
           return (
-            <TableRow key={product.code}>
+            <TableRow key={product.code} className="cursor-pointer" onClick={() => onOpenChart(product.code)}>
               <TableCell className="font-medium tabular-nums">{product.code}</TableCell>
               <TableCell>
                 <div>{product.expandedName}</div>
@@ -254,10 +280,10 @@ function ProductTable({ products }: { products: Product[] }) {
                   ? "当日无收盘"
                   : formatVolume(quote.volume, quote.volumeUnit)}
               </TableCell>
-              <TableCell>
+              <TableCell onClick={(event) => event.stopPropagation()}>
                 <YieldCell product={product} />
               </TableCell>
-              <TableCell>
+              <TableCell onClick={(event) => event.stopPropagation()}>
                 {product.manager?.sourceUrl ? (
                   <a
                     className="underline underline-offset-2"
@@ -271,7 +297,7 @@ function ProductTable({ products }: { products: Product[] }) {
                   (product.manager?.name ?? "未填")
                 )}
               </TableCell>
-              <TableCell>
+              <TableCell onClick={(event) => event.stopPropagation()}>
                 <a
                   className="underline underline-offset-2"
                   href={quote.sourceUrl}
@@ -318,6 +344,8 @@ export function Board() {
   const managers = useMemo(() => groupByManager(products), [products])
   const missingCount = products.filter((p) => missingMilestoneFields(p).length > 0).length
   const completeRelations = relationCompleteCount(products)
+  const [chartCode, setChartCode] = useState<string | null>(null)
+  const chartProduct = products.find((product) => product.code === chartCode) ?? null
   const dividends = useMemo(
     () =>
       products
@@ -339,7 +367,7 @@ export function Board() {
           <p className="text-xs tracking-[0.18em] text-[#7a3b24]">沪深交易所公开收盘 · 不是实时行情</p>
           <h1 className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">内地公募 REITs</h1>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-[#3f3a33]">
-            先扫全部已上市产品的日终收盘、涨跌幅、成交量和年化分派率，再按基金管理人打开同一批产品。原始权益人、运营管理机构和两个持有比例这一步先留空。
+            先扫全部已上市产品的日终收盘、涨跌幅、成交量和年化分派率，点一行看日K和成交量，再按基金管理人打开同一批产品。原始权益人、运营管理机构和两个持有比例这一步先留空。
           </p>
           <dl className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
             <Stat label="已上市" value={`${products.length} 只`} detail={`上交所 ${checklist.exchanges.SSE.listedCount} · 深交所 ${checklist.exchanges.SZSE.listedCount}`} />
@@ -392,9 +420,9 @@ export function Board() {
                   涨红跌绿。上交所成交量是份，深交所成交量是万份，跟各自公开行情的单位一致。
                 </p>
               </div>
-              <ProductCards products={products} />
+              <ProductCards products={products} onOpenChart={setChartCode} />
               <div className="hidden rounded-xl border border-[#1c1915]/10 bg-white lg:block">
-                <ProductTable products={products} />
+                <ProductTable products={products} onOpenChart={setChartCode} />
               </div>
             </section>
 
@@ -509,9 +537,9 @@ export function Board() {
                       <span className="text-sm text-muted-foreground">{group.products.length} 只</span>
                     </CollapsibleTrigger>
                     <CollapsibleContent className="border-t">
-                      <ProductCards products={group.products} />
+                      <ProductCards products={group.products} onOpenChart={setChartCode} />
                       <div className="hidden lg:block">
-                        <ProductTable products={group.products} />
+                        <ProductTable products={group.products} onOpenChart={setChartCode} />
                       </div>
                     </CollapsibleContent>
                   </Collapsible>
@@ -520,6 +548,20 @@ export function Board() {
             </section>
           </>
         ) : null}
+
+        <Dialog open={chartProduct !== null} onOpenChange={(open) => { if (!open) setChartCode(null) }}>
+          <DialogContent className="max-h-[92vh] w-[calc(100vw-1.5rem)] max-w-3xl overflow-y-auto sm:max-w-3xl">
+            <DialogHeader>
+              <DialogTitle>
+                {chartProduct ? `${chartProduct.code} ${chartProduct.expandedName}` : "日K"}
+              </DialogTitle>
+              <DialogDescription>
+                交易所日线。成交量画在K线下面。
+              </DialogDescription>
+            </DialogHeader>
+            {chartProduct ? <DailyChart code={chartProduct.code} /> : null}
+          </DialogContent>
+        </Dialog>
 
         <footer className="border-t border-[#1c1915]/15 pt-4 text-xs leading-5 text-muted-foreground">
           <p>{checklist.exchanges.SSE.note}</p>
