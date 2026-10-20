@@ -4,16 +4,35 @@ import { useEffect, useRef, useState } from "react"
 import { dailySeries, type DailyBar } from "@/lib/daily-bars"
 import { formatPrice, formatVolume } from "@/lib/market"
 
-const UP = "#b42318"
-const DOWN = "#067647"
+const UP = "#ff4d4f"
+const DOWN = "#1dbf73"
 
-export function DailyChart({ code }: { code: string }) {
-  const host = useRef<HTMLDivElement>(null)
+export type ChartSpec = {
+  bars: DailyBar[]
+  volumeUnit: string
+  sourceLabel: string
+  sourceUrl: string
+  note?: string
+}
+
+function specFromCode(code: string): ChartSpec | null {
   const series = dailySeries(code)
+  if (!series) return null
+  return {
+    bars: series.bars,
+    volumeUnit: series.volumeUnit,
+    sourceLabel: series.sourceLabel,
+    sourceUrl: series.sourceUrl,
+  }
+}
+
+export function DailyChart({ code, spec }: { code?: string; spec?: ChartSpec }) {
+  const host = useRef<HTMLDivElement>(null)
+  const series = spec ?? (code ? specFromCode(code) : null)
   const [active, setActive] = useState<DailyBar | null>(series?.bars.at(-1) ?? null)
 
   useEffect(() => {
-    const nextSeries = dailySeries(code)
+    const nextSeries = spec ?? (code ? specFromCode(code) : null)
     setActive(nextSeries?.bars.at(-1) ?? null)
     const el = host.current
     if (!el || !nextSeries) return
@@ -28,16 +47,16 @@ export function DailyChart({ code }: { code: string }) {
         width,
         height: host.current.clientHeight,
         layout: {
-          background: { type: lc.ColorType.Solid, color: "#fffdf8" },
-          textColor: "#3f3a33",
+          background: { type: lc.ColorType.Solid, color: "#10161c" },
+          textColor: "#c5ced6",
           fontFamily: "inherit",
         },
         grid: {
-          vertLines: { color: "rgba(28,25,21,0.06)" },
-          horzLines: { color: "rgba(28,25,21,0.06)" },
+          vertLines: { color: "rgba(197,206,214,0.08)" },
+          horzLines: { color: "rgba(197,206,214,0.08)" },
         },
-        rightPriceScale: { borderColor: "rgba(28,25,21,0.12)" },
-        timeScale: { borderColor: "rgba(28,25,21,0.12)", rightOffset: 2 },
+        rightPriceScale: { borderColor: "rgba(197,206,214,0.16)" },
+        timeScale: { borderColor: "rgba(197,206,214,0.16)", rightOffset: 2 },
         crosshair: { mode: lc.CrosshairMode.Normal },
         handleScroll: { vertTouchDrag: false },
       })
@@ -66,7 +85,7 @@ export function DailyChart({ code }: { code: string }) {
         nextSeries.bars.map((bar) => ({
           time: bar.time,
           value: bar.volume,
-          color: bar.close >= bar.open ? "rgba(180,35,24,0.45)" : "rgba(6,118,71,0.45)",
+          color: bar.close >= bar.open ? "rgba(255,77,79,0.45)" : "rgba(29,191,115,0.45)",
         }))
       )
       candles.priceScale().applyOptions({ scaleMargins: { top: 0.08, bottom: 0.28 } })
@@ -98,11 +117,11 @@ export function DailyChart({ code }: { code: string }) {
       disposed = true
       chart?.remove()
     }
-  }, [code])
+  }, [code, spec])
 
   if (!series) {
     return (
-      <p className="rounded-lg bg-[#f6f1e6] px-3 py-6 text-sm leading-6">
+      <p className="bg-[#10161c] px-2 py-4 text-xs leading-5 text-[#9aa3ad]">
         没有可核对的交易所日K，不补画。
       </p>
     )
@@ -115,7 +134,8 @@ export function DailyChart({ code }: { code: string }) {
   return (
     <div className="space-y-2">
       <p className="text-xs leading-5 text-muted-foreground">
-        日K，{first.time} 至 {last.time}，{series.bars.length} 根。涨红跌绿。成交量在图下，单位是{series.volumeUnit}。没有分时，没有盘口。
+        日K {first.time}–{last.time} · {series.bars.length} 根 · 成交量（{series.volumeUnit}）在下方 · 无分时无盘口
+        {series.note ? ` · ${series.note}` : ""}
       </p>
       <dl className="grid grid-cols-3 gap-2 text-xs sm:grid-cols-6">
         <Readout label="日期" value={shown.time} />
@@ -123,14 +143,19 @@ export function DailyChart({ code }: { code: string }) {
         <Readout label="高" value={formatPrice(shown.high)} />
         <Readout label="低" value={formatPrice(shown.low)} />
         <Readout label="收" value={formatPrice(shown.close)} />
-        <Readout label="量" value={formatVolume(shown.volume, series.volumeUnit)} />
+        <Readout label="量" value={formatBarVolume(shown.volume, series.volumeUnit)} />
       </dl>
-      <div ref={host} className="h-72 w-full sm:h-96" />
+      <div ref={host} className="h-64 w-full sm:h-80" />
       <a className="text-xs underline underline-offset-2" href={series.sourceUrl} target="_blank" rel="noreferrer">
         {series.sourceLabel}
       </a>
     </div>
   )
+}
+
+function formatBarVolume(value: number, unit: string): string {
+  if (unit === "份" || unit === "万份") return formatVolume(value, unit)
+  return value.toLocaleString("zh-CN", { maximumFractionDigits: 0 })
 }
 
 function Readout({ label, value }: { label: string; value: string }) {

@@ -28,6 +28,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { DailyChart } from "@/components/daily-chart"
+import { csi932047 } from "@/lib/csi-932047"
 import {
   assess,
   checklist,
@@ -42,15 +43,11 @@ import {
   relationCompleteCount,
   yieldView,
   type Product,
-  type YieldView,
 } from "@/lib/market"
 
-const FORMULA =
-  "年化分派率 = 近 12 个月已公告每份现金分配合计 ÷ 该日收盘价。不满 12 个月时，分子只用这段时期里已公告的分配，并标明实际月份。没有分配公告则写「尚无分配」。这不是预测，也不把上一交易日的收盘填进当天。"
-
 function tone(value: number | null): string {
-  if (value == null || value === 0) return "text-foreground"
-  return value > 0 ? "text-[#b42318]" : "text-[#067647]"
+  if (value == null || value === 0) return "text-[#e7eaee]"
+  return value > 0 ? "text-[#ff4d4f]" : "text-[#1dbf73]"
 }
 
 function YieldCell({ product }: { product: Product }) {
@@ -82,21 +79,24 @@ function YieldCell({ product }: { product: Product }) {
           maximumFractionDigits: 2,
         })}
         %
+        {view.shortSpan ? (
+          <span className="mt-1 block text-[11px] font-normal text-[#9aa3ad]">{view.shortSpan}</span>
+        ) : null}
       </DialogTrigger>
       <DialogContent className="sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>
             {product.code} {product.expandedName}
           </DialogTitle>
-          <DialogDescription>{FORMULA}</DialogDescription>
+          <DialogDescription>已公告分配</DialogDescription>
         </DialogHeader>
-        <YieldBreakdown product={product} view={view} />
+        <YieldBreakdown product={product} />
       </DialogContent>
     </Dialog>
   )
 }
 
-function YieldBreakdown({ product, view }: { product: Product; view: YieldView }) {
+function YieldBreakdown({ product }: { product: Product }) {
   const rows = product.distributions.filter(
     (d) =>
       d.announcementDate >= checklist.distributionWindow.start &&
@@ -104,10 +104,6 @@ function YieldBreakdown({ product, view }: { product: Product; view: YieldView }
   )
   return (
     <div className="space-y-3 text-sm">
-      <p>
-        公告日窗口 {checklist.distributionWindow.start} 至 {checklist.tradeDate}。
-        {view.shortSpan ? ` ${view.shortSpan}。` : " 区间满 12 个月。"}
-      </p>
       <ul className="space-y-2">
         {rows.map((row) => (
           <li key={`${row.announcementDate}-${row.recordDate}`} className="border-b pb-2">
@@ -126,15 +122,6 @@ function YieldBreakdown({ product, view }: { product: Product; view: YieldView }
           </li>
         ))}
       </ul>
-      <p className="tabular-nums">
-        合计 {formatPerUnit(view.sumPerUnit ?? 0)} 元/份 ÷ 收盘{" "}
-        {formatPrice(product.quote.close!)} 元/份 ={" "}
-        {view.yieldPct!.toLocaleString("zh-CN", {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2,
-        })}
-        %
-      </p>
     </div>
   )
 }
@@ -152,7 +139,7 @@ function ProductCards({
         const quote = product.quote
         const noClose = quote.close == null
         return (
-          <article key={product.code} className="rounded-xl border border-[#1c1915]/10 bg-white p-3">
+          <article key={product.code} className="border-b border-[#2a3340] bg-[#10161c] px-2 py-1.5">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="text-xs tabular-nums text-muted-foreground">{product.code}</div>
@@ -361,35 +348,36 @@ export function Board() {
   )
 
   return (
-    <div className="min-h-screen bg-[#f3efe4] text-[#1c1915]">
-      <div className="mx-auto flex max-w-[1400px] flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
-        <header className="border-b border-[#1c1915]/15 pb-5">
-          <p className="text-xs tracking-[0.18em] text-[#7a3b24]">沪深交易所公开收盘 · 不是实时行情</p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">内地公募 REITs</h1>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-[#3f3a33]">
-            先扫全部已上市产品的日终收盘、涨跌幅、成交量和年化分派率，点一行看日K和成交量，再按基金管理人打开同一批产品。原始权益人、运营管理机构和两个持有比例这一步先留空。
-          </p>
-          <dl className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-            <Stat label="已上市" value={`${products.length} 只`} detail={`上交所 ${checklist.exchanges.SSE.listedCount} · 深交所 ${checklist.exchanges.SZSE.listedCount}`} />
-            <Stat label="行情交易日" value={checklist.tradeDate} detail="收盘之后写入" />
-            <Stat label="三类关系已齐" value={`${completeRelations} 只`} detail="本步只填了基金管理人" />
-            <Stat label="本步缺字段" value={`${missingCount} 只`} detail="代码、简称、业态、收盘、管理人、来源" />
-            <Stat label="最近核对日" value={checklist.checkedOn} detail="名单与当日两所列表对过" />
-          </dl>
+    <div className="min-h-screen bg-[#0c1014] text-[#e7eaee] tabular-nums">
+      <div className="mx-auto flex max-w-[1400px] flex-col gap-2 px-2 py-2 sm:px-3">
+        <header className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-[#2a3340] pb-2">
+          <h1 className="text-sm font-semibold tracking-tight">内地公募 REITs</h1>
+          <p className="text-[11px] text-[#9aa3ad]">日终收盘 · 不是实时行情</p>
+          <nav className="flex flex-wrap gap-3 text-[11px]">
+            <a className="underline-offset-2 hover:underline" href="#market">全市场</a>
+            <a className="underline-offset-2 hover:underline" href="#index">932047</a>
+            <a className="underline-offset-2 hover:underline" href="#calendars">分红与解禁</a>
+            <a className="underline-offset-2 hover:underline" href="#managers">基金管理人</a>
+          </nav>
         </header>
+        <dl className="grid grid-cols-2 gap-px bg-[#2a3340] text-[11px] sm:grid-cols-5">
+          <Stat label="已上市" value={`${products.length}`} detail={`沪 ${checklist.exchanges.SSE.listedCount} · 深 ${checklist.exchanges.SZSE.listedCount}`} />
+          <Stat label="交易日" value={checklist.tradeDate} detail="收盘后" />
+          <Stat label="三类关系已齐" value={`${completeRelations}`} detail="只填了管理人" />
+          <Stat label="本步缺字段" value={`${missingCount}`} detail="只" />
+          <Stat label="核对日" value={checklist.checkedOn} detail="名单已对" />
+        </dl>
 
-        <nav className="flex flex-wrap gap-3 text-sm">
-          <a className="underline underline-offset-2" href="#market">全市场</a>
-          <a className="underline underline-offset-2" href="#calendars">分红与解禁</a>
-          <a className="underline underline-offset-2" href="#managers">基金管理人</a>
-        </nav>
-
-        <section className="rounded-xl border border-[#1c1915]/10 bg-white/80 p-4 text-sm leading-6">
-          <h2 className="font-medium">年化分派率怎么算</h2>
-          <p className="mt-1">{FORMULA}</p>
-          <p className="mt-1 text-muted-foreground">
-            分子用的公告日是 {checklist.distributionWindow.start} 至 {checklist.distributionWindow.end}。点开某一格，可以把百分比乘回收盘价，对上每一笔每份金额。
-          </p>
+        <section id="index" className="border border-[#2a3340] bg-[#10161c] p-2">
+          <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="text-xs font-medium">
+              {csi932047.name} {csi932047.code}
+            </h2>
+            <a className="text-[11px] text-[#9aa3ad] underline-offset-2 hover:underline" href={csi932047.sourceUrl} target="_blank" rel="noreferrer">
+              {csi932047.publisher}
+            </a>
+          </div>
+          <DailyChart spec={csi932047.spec} />
         </section>
 
         {status === "loading" ? <LoadingBoard /> : null}
@@ -415,19 +403,19 @@ export function Board() {
           <>
             <section id="market" className="space-y-3">
               <div className="flex flex-wrap items-end justify-between gap-2">
-                <h2 className="text-xl font-semibold">全市场</h2>
+                <h2 className="text-xs font-medium">全市场</h2>
                 <p className="text-xs text-muted-foreground">
                   涨红跌绿。上交所成交量是份，深交所成交量是万份，跟各自公开行情的单位一致。
                 </p>
               </div>
               <ProductCards products={products} onOpenChart={setChartCode} />
-              <div className="hidden rounded-xl border border-[#1c1915]/10 bg-white lg:block">
+              <div className="hidden border border-[#2a3340] bg-[#10161c] lg:block">
                 <ProductTable products={products} onOpenChart={setChartCode} />
               </div>
             </section>
 
             <section id="calendars" className="grid gap-4 lg:grid-cols-2">
-              <Card className="bg-white/90">
+              <Card className="rounded-sm border-[#2a3340] bg-[#10161c]">
                 <CardHeader>
                   <CardTitle>分红日历</CardTitle>
                   <p className="text-sm text-muted-foreground">
@@ -468,7 +456,7 @@ export function Board() {
                   </div>
                 </CardContent>
               </Card>
-              <Card className="bg-white/90">
+              <Card className="rounded-sm border-[#2a3340] bg-[#10161c]">
                 <CardHeader>
                   <CardTitle>解禁日历</CardTitle>
                   <p className="text-sm text-muted-foreground">
@@ -513,7 +501,7 @@ export function Board() {
 
             <section id="managers" className="space-y-3">
               <div>
-                <h2 className="text-xl font-semibold">基金管理人</h2>
+                <h2 className="text-xs font-medium">基金管理人</h2>
                 <p className="mt-1 text-sm text-muted-foreground">
                   点开一家，名下产品都在，收盘、涨跌幅、成交量和分派率还在。原始权益人和运营管理机构本步未齐，切换留在这一页。
                 </p>
@@ -531,7 +519,7 @@ export function Board() {
               </Alert>
               <div className="space-y-2">
                 {managers.map((group) => (
-                  <Collapsible key={group.name} className="rounded-xl border border-[#1c1915]/10 bg-white">
+                  <Collapsible key={group.name} className="border border-[#2a3340] bg-[#10161c]">
                     <CollapsibleTrigger className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left">
                       <span className="font-medium">{group.name}</span>
                       <span className="text-sm text-muted-foreground">{group.products.length} 只</span>
@@ -563,7 +551,7 @@ export function Board() {
           </DialogContent>
         </Dialog>
 
-        <footer className="border-t border-[#1c1915]/15 pt-4 text-xs leading-5 text-muted-foreground">
+        <footer className="border-t border-[#2a3340] pt-2 text-[11px] leading-5 text-[#9aa3ad]">
           <p>{checklist.exchanges.SSE.note}</p>
           <p className="mt-1">{checklist.exchanges.SZSE.note}</p>
           <p className="mt-1">
@@ -585,10 +573,10 @@ export function Board() {
 
 function Stat({ label, value, detail }: { label: string; value: string; detail: string }) {
   return (
-    <div className="rounded-lg bg-white/70 px-3 py-2">
-      <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className="mt-1 text-lg font-semibold tabular-nums">{value}</dd>
-      <p className="text-xs text-muted-foreground">{detail}</p>
+    <div className="bg-[#10161c] px-2 py-1">
+      <dt className="text-[10px] text-[#9aa3ad]">{label}</dt>
+      <dd className="text-xs font-medium">{value}</dd>
+      <p className="text-[10px] text-[#9aa3ad]">{detail}</p>
     </div>
   )
 }
