@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useMemo, useState } from "react"
 import { DailyChart, type OverlayLine } from "@/components/daily-chart"
 import { overlayColor, useTheme } from "@/components/theme"
 import { Button } from "@/components/ui/button"
@@ -14,62 +14,21 @@ import { checklist } from "@/lib/market"
 import {
   closesFor,
   describeMain,
-  isProductId,
-  isSeriesId,
   labelFor,
   readySeries,
   unavailableSeries,
 } from "@/lib/series-catalog"
+import {
+  clearWatchPrimary,
+  makeWatchPrimary,
+  rememberWatch,
+  removeWatch,
+  setWatchOverlay,
+  toggleWatchShown,
+  useWatchlist,
+} from "@/lib/watchlist"
 
-const STORAGE_KEY = "reit-watchlist"
 const MAX_OVERLAYS = 4
-
-type WatchItem = {
-  id: string
-  shown: boolean
-  overlay: boolean
-}
-
-type WatchState = {
-  primaryId: string | null
-  items: WatchItem[]
-}
-
-const EMPTY: WatchState = { primaryId: null, items: [] }
-
-function savable(id: string): boolean {
-  return isProductId(id) || isSeriesId(id)
-}
-
-function readWatch(): WatchState {
-  try {
-    const raw = JSON.parse(window.localStorage.getItem(STORAGE_KEY) || "")
-    if (!raw || !Array.isArray(raw.items)) return EMPTY
-    const items: WatchItem[] = []
-    for (const item of raw.items) {
-      if (!item || typeof item.id !== "string" || !savable(item.id)) continue
-      if (items.some((saved) => saved.id === item.id)) continue
-      items.push({
-        id: item.id,
-        shown: item.shown !== false,
-        overlay: Boolean(item.overlay) && item.shown !== false,
-      })
-    }
-    let overlays = 0
-    for (const item of items) {
-      if (!item.overlay) continue
-      overlays += 1
-      if (overlays > MAX_OVERLAYS) item.overlay = false
-    }
-    const primaryId =
-      typeof raw.primaryId === "string" && items.some((item) => item.id === raw.primaryId && item.shown)
-        ? raw.primaryId
-        : null
-    return { primaryId, items }
-  } catch {
-    return EMPTY
-  }
-}
 
 function Choice({
   pressed,
@@ -101,20 +60,9 @@ function Choice({
 
 export function WatchChart() {
   const { theme } = useTheme()
-  const [state, setState] = useState<WatchState>(EMPTY)
-  const [ready, setReady] = useState(false)
+  const state = useWatchlist()
   const [query, setQuery] = useState("")
   const [notice, setNotice] = useState("")
-
-  useEffect(() => {
-    setState(readWatch())
-    setReady(true)
-  }, [])
-
-  useEffect(() => {
-    if (!ready) return
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
-  }, [ready, state])
 
   const mainId = state.primaryId ?? "series:932047"
   const main = describeMain(state.primaryId) ?? describeMain(null)
@@ -152,50 +100,22 @@ export function WatchChart() {
   }, [mainId, state.items, theme])
 
   function add(id: string) {
-    if (!savable(id)) return
     setNotice("")
-    setState((current) => {
-      const existing = current.items.find((item) => item.id === id)
-      if (existing) {
-        return {
-          ...current,
-          items: current.items.map((item) => (item.id === id ? { ...item, shown: true } : item)),
-        }
-      }
-      return { ...current, items: [...current.items, { id, shown: true, overlay: false }] }
-    })
+    rememberWatch(id)
     setQuery("")
   }
 
   function remove(id: string) {
-    setState((current) => ({
-      primaryId: current.primaryId === id ? null : current.primaryId,
-      items: current.items.filter((item) => item.id !== id),
-    }))
+    removeWatch(id)
   }
 
   function toggleShown(id: string) {
-    setState((current) => {
-      const item = current.items.find((entry) => entry.id === id)
-      if (!item) return current
-      const shown = !item.shown
-      return {
-        primaryId: !shown && current.primaryId === id ? null : current.primaryId,
-        items: current.items.map((entry) =>
-          entry.id === id ? { ...entry, shown, overlay: shown ? entry.overlay : false } : entry
-        ),
-      }
-    })
+    toggleWatchShown(id)
   }
 
   function makePrimary(id: string) {
     setNotice("")
-    setState((current) => ({
-      primaryId: id,
-      items: current.items.map((item) =>
-        item.id === id ? { ...item, shown: true, overlay: false } : item
-      ),
-    }))
+    makeWatchPrimary(id)
   }
 
   function toggleOverlay(id: string) {
@@ -207,12 +127,7 @@ export function WatchChart() {
       return
     }
     setNotice("")
-    setState((current) => ({
-      ...current,
-      items: current.items.map((entry) =>
-        entry.id === id ? { ...entry, overlay: !entry.overlay } : entry
-      ),
-    }))
+    setWatchOverlay(id, !item.overlay)
   }
 
   if (!main) {
@@ -231,7 +146,7 @@ export function WatchChart() {
         </h2>
         <div className="flex flex-wrap items-center gap-2">
           {main.code !== "932047" ? (
-            <Button size="xs" variant="outline" onClick={() => setState((current) => ({ ...current, primaryId: null }))}>
+            <Button size="xs" variant="outline" onClick={() => clearWatchPrimary()}>
               改回 932047
             </Button>
           ) : null}

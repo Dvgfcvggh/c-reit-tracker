@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
+import { Plus } from "lucide-react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -45,6 +46,7 @@ import {
   yieldView,
   type Product,
 } from "@/lib/market"
+import { productWatchId, saveProductOnce, useWatchlist } from "@/lib/watchlist"
 
 function tone(value: number | null): string {
   if (value == null || value === 0) return "text-[var(--ink)]"
@@ -127,12 +129,36 @@ function YieldBreakdown({ product }: { product: Product }) {
   )
 }
 
+function WatchPlus({ code }: { code: string }) {
+  const saved = useWatchlist().items.some((item) => item.id === productWatchId(code))
+  return (
+    <button
+      type="button"
+      aria-pressed={saved}
+      aria-label={saved ? `${code} 已在自选` : `${code} 加入自选`}
+      className={
+        saved
+          ? "inline-flex size-8 shrink-0 items-center justify-center bg-[var(--ink)] text-[var(--page)]"
+          : "inline-flex size-8 shrink-0 items-center justify-center border border-[var(--line)] text-[var(--ink)]"
+      }
+      onClick={(event) => {
+        event.stopPropagation()
+        if (!saved) saveProductOnce(code)
+      }}
+    >
+      <Plus aria-hidden="true" className="size-4" />
+    </button>
+  )
+}
+
 function ProductCards({
   products,
   onOpenChart,
+  watchlist = false,
 }: {
   products: Product[]
   onOpenChart: (code: string) => void
+  watchlist?: boolean
 }) {
   return (
     <div className="space-y-3 lg:hidden">
@@ -141,8 +167,8 @@ function ProductCards({
         const noClose = quote.close == null
         return (
           <article key={product.code} className="border-b border-[var(--line)] bg-[var(--panel)] px-2 py-1.5">
-            <div className="flex items-start justify-between gap-3">
-              <div>
+            <div className="flex items-start gap-2">
+              <div className="min-w-0 flex-1">
                 <div className="text-xs tabular-nums text-muted-foreground">{product.code}</div>
                 <button
                   type="button"
@@ -155,10 +181,11 @@ function ProductCards({
                   <p className="text-xs text-muted-foreground">场内简称 {product.shortName}</p>
                 ) : null}
               </div>
-              <div className="text-right text-sm">
+              <div className="shrink-0 text-right text-sm">
                 <div>{exchangeLabel(product.exchange)}</div>
                 <div className="text-muted-foreground">{product.sector ?? "业态未从公告读出"}</div>
               </div>
+              {watchlist ? <WatchPlus code={product.code} /> : null}
             </div>
             <dl className="mt-3 grid grid-cols-3 gap-2 text-sm">
               <div>
@@ -215,9 +242,11 @@ function ProductCards({
 function ProductTable({
   products,
   onOpenChart,
+  watchlist = false,
 }: {
   products: Product[]
   onOpenChart: (code: string) => void
+  watchlist?: boolean
 }) {
   return (
     <Table>
@@ -233,6 +262,9 @@ function ProductTable({
           <TableHead>年化分派率</TableHead>
           <TableHead>基金管理人</TableHead>
           <TableHead>来源</TableHead>
+          {watchlist ? (
+            <TableHead className="sticky right-0 z-10 w-12 bg-[var(--panel)] text-right">自选</TableHead>
+          ) : null}
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -295,6 +327,14 @@ function ProductTable({
                   {quote.sourceLabel}
                 </a>
               </TableCell>
+              {watchlist ? (
+                <TableCell
+                  className="sticky right-0 z-10 bg-[var(--panel)] text-right"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <WatchPlus code={product.code} />
+                </TableCell>
+              ) : null}
             </TableRow>
           )
         })}
@@ -402,9 +442,9 @@ export function Board() {
                   涨红跌绿。上交所成交量是份，深交所成交量是万份，跟各自公开行情的单位一致。
                 </p>
               </div>
-              <ProductCards products={products} onOpenChart={setChartCode} />
+              <ProductCards products={products} onOpenChart={setChartCode} watchlist />
               <div className="hidden border border-[var(--line)] bg-[var(--panel)] lg:block">
-                <ProductTable products={products} onOpenChart={setChartCode} />
+                <ProductTable products={products} onOpenChart={setChartCode} watchlist />
               </div>
             </section>
 
