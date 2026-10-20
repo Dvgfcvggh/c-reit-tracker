@@ -28,7 +28,8 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { DailyChart } from "@/components/daily-chart"
-import { csi932047 } from "@/lib/csi-932047"
+import { useTheme, type ThemeName } from "@/components/theme"
+import { WatchChart } from "@/components/watch-chart"
 import {
   assess,
   checklist,
@@ -46,8 +47,8 @@ import {
 } from "@/lib/market"
 
 function tone(value: number | null): string {
-  if (value == null || value === 0) return "text-[#e7eaee]"
-  return value > 0 ? "text-[#ff4d4f]" : "text-[#1dbf73]"
+  if (value == null || value === 0) return "text-[var(--ink)]"
+  return value > 0 ? "text-[var(--up)]" : "text-[var(--down)]"
 }
 
 function YieldCell({ product }: { product: Product }) {
@@ -80,7 +81,7 @@ function YieldCell({ product }: { product: Product }) {
         })}
         %
         {view.shortSpan ? (
-          <span className="mt-1 block text-[11px] font-normal text-[#9aa3ad]">{view.shortSpan}</span>
+          <span className="mt-1 block text-[11px] font-normal text-[var(--muted-ink)]">{view.shortSpan}</span>
         ) : null}
       </DialogTrigger>
       <DialogContent className="sm:max-w-xl">
@@ -139,7 +140,7 @@ function ProductCards({
         const quote = product.quote
         const noClose = quote.close == null
         return (
-          <article key={product.code} className="border-b border-[#2a3340] bg-[#10161c] px-2 py-1.5">
+          <article key={product.code} className="border-b border-[var(--line)] bg-[var(--panel)] px-2 py-1.5">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="text-xs tabular-nums text-muted-foreground">{product.code}</div>
@@ -348,19 +349,22 @@ export function Board() {
   )
 
   return (
-    <div className="min-h-screen bg-[#0c1014] text-[#e7eaee] tabular-nums">
+    <div className="min-h-screen bg-[var(--page)] text-[var(--ink)] tabular-nums">
       <div className="mx-auto flex max-w-[1400px] flex-col gap-2 px-2 py-2 sm:px-3">
-        <header className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-[#2a3340] pb-2">
-          <h1 className="text-sm font-semibold tracking-tight">内地公募 REITs</h1>
-          <p className="text-[11px] text-[#9aa3ad]">日终收盘 · 不是实时行情</p>
-          <nav className="flex flex-wrap gap-3 text-[11px]">
-            <a className="underline-offset-2 hover:underline" href="#market">全市场</a>
-            <a className="underline-offset-2 hover:underline" href="#index">932047</a>
-            <a className="underline-offset-2 hover:underline" href="#calendars">分红与解禁</a>
-            <a className="underline-offset-2 hover:underline" href="#managers">基金管理人</a>
-          </nav>
+        <header className="flex items-start justify-between gap-2 border-b border-[var(--line)] pb-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+            <h1 className="text-sm font-semibold tracking-tight">内地公募 REITs</h1>
+            <p className="text-[11px] text-[var(--muted-ink)]">日终收盘 · 不是实时行情</p>
+            <nav className="flex flex-wrap gap-3 text-[11px]">
+              <a className="underline-offset-2 hover:underline" href="#market">全市场</a>
+              <a className="underline-offset-2 hover:underline" href="#index">主图</a>
+              <a className="underline-offset-2 hover:underline" href="#calendars">分红与解禁</a>
+              <a className="underline-offset-2 hover:underline" href="#managers">基金管理人</a>
+            </nav>
+          </div>
+          <ThemeSwitch />
         </header>
-        <dl className="grid grid-cols-2 gap-px bg-[#2a3340] text-[11px] sm:grid-cols-5">
+        <dl className="grid grid-cols-2 gap-px bg-[var(--line)] text-[11px] sm:grid-cols-5">
           <Stat label="已上市" value={`${products.length}`} detail={`沪 ${checklist.exchanges.SSE.listedCount} · 深 ${checklist.exchanges.SZSE.listedCount}`} />
           <Stat label="交易日" value={checklist.tradeDate} detail="收盘后" />
           <Stat label="三类关系已齐" value={`${completeRelations}`} detail="只填了管理人" />
@@ -368,17 +372,7 @@ export function Board() {
           <Stat label="核对日" value={checklist.checkedOn} detail="名单已对" />
         </dl>
 
-        <section id="index" className="border border-[#2a3340] bg-[#10161c] p-2">
-          <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
-            <h2 className="text-xs font-medium">
-              {csi932047.name} {csi932047.code}
-            </h2>
-            <a className="text-[11px] text-[#9aa3ad] underline-offset-2 hover:underline" href={csi932047.sourceUrl} target="_blank" rel="noreferrer">
-              {csi932047.publisher}
-            </a>
-          </div>
-          <DailyChart spec={csi932047.spec} />
-        </section>
+        <WatchChart />
 
         {status === "loading" ? <LoadingBoard /> : null}
         {status === "error" ? (
@@ -409,13 +403,13 @@ export function Board() {
                 </p>
               </div>
               <ProductCards products={products} onOpenChart={setChartCode} />
-              <div className="hidden border border-[#2a3340] bg-[#10161c] lg:block">
+              <div className="hidden border border-[var(--line)] bg-[var(--panel)] lg:block">
                 <ProductTable products={products} onOpenChart={setChartCode} />
               </div>
             </section>
 
             <section id="calendars" className="grid gap-4 lg:grid-cols-2">
-              <Card className="rounded-sm border-[#2a3340] bg-[#10161c]">
+              <Card className="rounded-sm border-[var(--line)] bg-[var(--panel)]">
                 <CardHeader>
                   <CardTitle>分红日历</CardTitle>
                   <p className="text-sm text-muted-foreground">
@@ -456,7 +450,7 @@ export function Board() {
                   </div>
                 </CardContent>
               </Card>
-              <Card className="rounded-sm border-[#2a3340] bg-[#10161c]">
+              <Card className="rounded-sm border-[var(--line)] bg-[var(--panel)]">
                 <CardHeader>
                   <CardTitle>解禁日历</CardTitle>
                   <p className="text-sm text-muted-foreground">
@@ -519,7 +513,7 @@ export function Board() {
               </Alert>
               <div className="space-y-2">
                 {managers.map((group) => (
-                  <Collapsible key={group.name} className="border border-[#2a3340] bg-[#10161c]">
+                  <Collapsible key={group.name} className="border border-[var(--line)] bg-[var(--panel)]">
                     <CollapsibleTrigger className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left">
                       <span className="font-medium">{group.name}</span>
                       <span className="text-sm text-muted-foreground">{group.products.length} 只</span>
@@ -551,7 +545,7 @@ export function Board() {
           </DialogContent>
         </Dialog>
 
-        <footer className="border-t border-[#2a3340] pt-2 text-[11px] leading-5 text-[#9aa3ad]">
+        <footer className="border-t border-[var(--line)] pt-2 text-[11px] leading-5 text-[var(--muted-ink)]">
           <p>{checklist.exchanges.SSE.note}</p>
           <p className="mt-1">{checklist.exchanges.SZSE.note}</p>
           <p className="mt-1">
@@ -571,12 +565,50 @@ export function Board() {
   )
 }
 
+function ThemeSwitch() {
+  const { theme, setTheme } = useTheme()
+  return (
+    <div className="inline-flex shrink-0 border border-[var(--line)] text-[11px]" role="group" aria-label="日间或夜间">
+      <ThemeChoice label="日间" value="day" current={theme} onSelect={setTheme} />
+      <ThemeChoice label="夜间" value="night" current={theme} onSelect={setTheme} />
+    </div>
+  )
+}
+
+function ThemeChoice({
+  label,
+  value,
+  current,
+  onSelect,
+}: {
+  label: string
+  value: ThemeName
+  current: ThemeName
+  onSelect: (theme: ThemeName) => void
+}) {
+  const selected = current === value
+  return (
+    <button
+      type="button"
+      aria-pressed={selected}
+      onClick={() => onSelect(value)}
+      className={
+        selected
+          ? "bg-[var(--ink)] px-2 py-0.5 text-[var(--page)]"
+          : "px-2 py-0.5 text-[var(--muted-ink)]"
+      }
+    >
+      {label}
+    </button>
+  )
+}
+
 function Stat({ label, value, detail }: { label: string; value: string; detail: string }) {
   return (
-    <div className="bg-[#10161c] px-2 py-1">
-      <dt className="text-[10px] text-[#9aa3ad]">{label}</dt>
+    <div className="bg-[var(--panel)] px-2 py-1">
+      <dt className="text-[10px] text-[var(--muted-ink)]">{label}</dt>
       <dd className="text-xs font-medium">{value}</dd>
-      <p className="text-[10px] text-[#9aa3ad]">{detail}</p>
+      <p className="text-[10px] text-[var(--muted-ink)]">{detail}</p>
     </div>
   )
 }
