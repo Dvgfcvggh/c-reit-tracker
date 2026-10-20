@@ -160,7 +160,7 @@ export function WatchChart() {
         </div>
       </div>
       <p className="mb-2 text-[11px] leading-5 text-[var(--muted-ink)]">
-        自选只留在这台浏览器。显示决定这条出不出现，主图把它换到上面，叠加把别的收盘画到左轴。
+        自选只留在这台浏览器。显示决定这条出不出现，主图把它换到上面。叠加最多 4 条，自选里的 REIT 也能互相叠加，画在左轴。
       </p>
       <div className="mb-2 flex flex-col gap-1 sm:flex-row sm:items-center">
         <Input
@@ -223,9 +223,7 @@ export function WatchChart() {
         </ul>
       )}
       {notice ? <p className="mb-2 text-[11px] text-[var(--muted-ink)]">{notice}</p> : null}
-      <p className="text-[11px] text-[var(--muted-ink)]">
-        已叠加 {overlayCount}/{MAX_OVERLAYS}
-      </p>
+      <p className="text-[11px] text-[var(--muted-ink)]">已叠加 {overlayCount}/4。再多就不再画。</p>
       <Collapsible className="mb-2">
         <CollapsibleTrigger className="py-1 text-[11px] underline-offset-2 hover:underline">
           指数与宏观，{readySeries.length} 条可加入

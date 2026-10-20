@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from "react"
 import { Plus } from "lucide-react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
@@ -28,10 +27,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { Input } from "@/components/ui/input"
 import { DailyChart } from "@/components/daily-chart"
 import { useTheme, type ThemeName } from "@/components/theme"
 import { WatchChart } from "@/components/watch-chart"
 import {
+  applyDisclosures,
   assess,
   checklist,
   exchangeLabel,
@@ -40,13 +41,75 @@ import {
   formatPrice,
   formatShares,
   formatVolume,
-  groupByManager,
+  groupByRole,
   missingMilestoneFields,
+  nextDividend,
+  nextUnlock,
   relationCompleteCount,
+  sortProducts,
   yieldView,
+  type HoldingDisclosure,
+  type Party,
   type Product,
+  type RoleKey,
+  type SortDir,
+  type SortKey,
 } from "@/lib/market"
 import { productWatchId, saveProductOnce, useWatchlist } from "@/lib/watchlist"
+
+function PartyNames({ parties, missing }: { parties: Party[]; missing: string }) {
+  if (parties.length === 0) return <span className="text-[var(--up)]">{missing}</span>
+  return (
+    <span className="flex flex-col gap-1">
+      {parties.map((party) => (
+        <a
+          key={`${party.note ?? ""}-${party.name}`}
+          className="underline underline-offset-2"
+          href={party.sourceUrl ?? undefined}
+          target="_blank"
+          rel="noreferrer"
+        >
+          {party.name}
+          {party.note ? `（${party.note}）` : ""}
+        </a>
+      ))}
+    </span>
+  )
+}
+
+function HoldingReadout({ holding }: { holding: HoldingDisclosure | null }) {
+  if (!holding || holding.status === "undisclosed") return <span>尚未披露</span>
+  if (holding.status === "unparsed") {
+    return (
+      <span>
+        <span className="text-[var(--up)]">未从公告读出</span>
+        <a className="mt-1 block underline underline-offset-2" href={holding.sourceUrl} target="_blank" rel="noreferrer">
+          {holding.periodLabel}
+        </a>
+      </span>
+    )
+  }
+  return (
+    <span>
+      {holding.approximate ? "约 " : ""}
+      {holding.ratio.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%
+      <a className="mt-1 block text-[11px] font-normal text-[var(--muted-ink)] underline underline-offset-2" href={holding.sourceUrl} target="_blank" rel="noreferrer">
+        {holding.periodLabel}
+      </a>
+    </span>
+  )
+}
+
+function Upcoming({ code, product }: { code: string; product: Product }) {
+  const dividend = nextDividend(product, checklist.tradeDate)
+  const unlock = nextUnlock(code, checklist.unlocks, checklist.tradeDate)
+  return (
+    <div className="text-[11px] leading-5 text-[var(--muted-ink)]">
+      <div>下一分红 {dividend ? `${dividend.kind} ${dividend.date}` : "无后续"}</div>
+      <div>下一解禁 {unlock ? unlock.unlockDate : "无后续"}</div>
+    </div>
+  )
+}
 
 function tone(value: number | null): string {
   if (value == null || value === 0) return "text-[var(--ink)]"
@@ -209,9 +272,30 @@ function ProductCards({
                 </dd>
               </div>
             </dl>
-            <div className="mt-3 text-sm" onClick={(event) => event.stopPropagation()}>
-              <div className="text-xs text-muted-foreground">年化分派率</div>
-              <YieldCell product={product} />
+            <div className="mt-3 space-y-2 text-sm" onClick={(event) => event.stopPropagation()}>
+              <div>
+                <div className="text-xs text-muted-foreground">年化分派率</div>
+                <YieldCell product={product} />
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">原始权益人</div>
+                <PartyNames parties={product.originalEquityHolders} missing="未从公告读出" />
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">运营管理机构</div>
+                <PartyNames parties={product.operatingManagers} missing="未从公告读出" />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <div className="text-xs text-muted-foreground">机构持有</div>
+                  <HoldingReadout holding={product.institutionHolding} />
+                </div>
+                <div>
+                  <div className="text-xs text-muted-foreground">原始权益人及关联方</div>
+                  <HoldingReadout holding={product.sponsorAffiliateHolding} />
+                </div>
+              </div>
+              <Upcoming code={product.code} product={product} />
             </div>
             <button
               type="button"
@@ -239,29 +323,89 @@ function ProductCards({
   )
 }
 
+function SortButton({
+  label,
+  column,
+  sortKey,
+  sortDir,
+  onSort,
+  align = "left",
+}: {
+  label: string
+  column: SortKey
+  sortKey: SortKey
+  sortDir: SortDir
+  onSort: (column: SortKey) => void
+  align?: "left" | "right"
+}) {
+  const active = sortKey === column
+  return (
+    <button
+      type="button"
+      className={`inline-flex items-center gap-1 ${align === "right" ? "ml-auto" : ""}`}
+      onClick={(event) => {
+        event.stopPropagation()
+        onSort(column)
+      }}
+    >
+      {label}
+      <span aria-hidden="true">{active ? (sortDir === "asc" ? "↑" : "↓") : "↕"}</span>
+    </button>
+  )
+}
+
 function ProductTable({
   products,
   onOpenChart,
   watchlist = false,
+  sortKey,
+  sortDir,
+  onSort,
 }: {
   products: Product[]
   onOpenChart: (code: string) => void
   watchlist?: boolean
+  sortKey: SortKey
+  sortDir: SortDir
+  onSort: (column: SortKey) => void
 }) {
   return (
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>代码</TableHead>
-          <TableHead>简称</TableHead>
-          <TableHead>交易所</TableHead>
-          <TableHead>业态</TableHead>
-          <TableHead className="text-right">收盘（元/份）</TableHead>
-          <TableHead className="text-right">涨跌幅</TableHead>
-          <TableHead className="text-right">成交量</TableHead>
-          <TableHead>年化分派率</TableHead>
-          <TableHead>基金管理人</TableHead>
+          <TableHead>
+            <SortButton label="代码" column="code" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
+          </TableHead>
+          <TableHead>
+            <SortButton label="简称" column="name" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
+          </TableHead>
+          <TableHead>
+            <SortButton label="交易所" column="exchange" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
+          </TableHead>
+          <TableHead>
+            <SortButton label="业态" column="sector" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
+          </TableHead>
+          <TableHead className="text-right">
+            <SortButton label="收盘（元/份）" column="close" sortKey={sortKey} sortDir={sortDir} onSort={onSort} align="right" />
+          </TableHead>
+          <TableHead className="text-right">
+            <SortButton label="涨跌幅" column="change" sortKey={sortKey} sortDir={sortDir} onSort={onSort} align="right" />
+          </TableHead>
+          <TableHead className="text-right">
+            <SortButton label="成交量" column="volume" sortKey={sortKey} sortDir={sortDir} onSort={onSort} align="right" />
+          </TableHead>
+          <TableHead className="text-right">
+            <SortButton label="年化分派率" column="yield" sortKey={sortKey} sortDir={sortDir} onSort={onSort} align="right" />
+          </TableHead>
+          <TableHead>
+            <SortButton label="基金管理人" column="manager" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
+          </TableHead>
           <TableHead>来源</TableHead>
+          <TableHead>原始权益人</TableHead>
+          <TableHead>运营管理机构</TableHead>
+          <TableHead>机构持有</TableHead>
+          <TableHead>关联方持有</TableHead>
+          <TableHead>下一分红 / 解禁</TableHead>
           {watchlist ? (
             <TableHead className="sticky right-0 z-10 w-12 bg-[var(--panel)] text-right">自选</TableHead>
           ) : null}
@@ -327,6 +471,21 @@ function ProductTable({
                   {quote.sourceLabel}
                 </a>
               </TableCell>
+              <TableCell onClick={(event) => event.stopPropagation()}>
+                <PartyNames parties={product.originalEquityHolders} missing="未从公告读出" />
+              </TableCell>
+              <TableCell onClick={(event) => event.stopPropagation()}>
+                <PartyNames parties={product.operatingManagers} missing="未从公告读出" />
+              </TableCell>
+              <TableCell onClick={(event) => event.stopPropagation()}>
+                <HoldingReadout holding={product.institutionHolding} />
+              </TableCell>
+              <TableCell onClick={(event) => event.stopPropagation()}>
+                <HoldingReadout holding={product.sponsorAffiliateHolding} />
+              </TableCell>
+              <TableCell>
+                <Upcoming code={product.code} product={product} />
+              </TableCell>
               {watchlist ? (
                 <TableCell
                   className="sticky right-0 z-10 bg-[var(--panel)] text-right"
@@ -365,28 +524,68 @@ export function Board() {
     }
   }, [])
 
-  const products = useMemo(
-    () => [...checklist.products].sort((a, b) => a.code.localeCompare(b.code)),
-    []
+  const [query, setQuery] = useState("")
+  const [sector, setSector] = useState("all")
+  const [exchange, setExchange] = useState<"all" | "SSE" | "SZSE">("all")
+  const [manager, setManager] = useState("all")
+  const [sortKey, setSortKey] = useState<SortKey>("code")
+  const [sortDir, setSortDir] = useState<SortDir>("asc")
+  const [role, setRole] = useState<RoleKey>("manager")
+
+  const allProducts = useMemo(() => checklist.products.map(applyDisclosures), [])
+  const sectors = useMemo(
+    () => [...new Set(allProducts.map((product) => product.sector ?? "业态未从公告读出"))].sort((a, b) => a.localeCompare(b, "zh")),
+    [allProducts]
   )
-  const managers = useMemo(() => groupByManager(products), [products])
-  const missingCount = products.filter((p) => missingMilestoneFields(p).length > 0).length
-  const completeRelations = relationCompleteCount(products)
+  const managerNames = useMemo(
+    () => [...new Set(allProducts.map((product) => product.manager?.name ?? "基金管理人未从公告读出"))].sort((a, b) => a.localeCompare(b, "zh")),
+    [allProducts]
+  )
+  const listed = useMemo(() => {
+    const text = query.trim()
+    const filtered = allProducts.filter((product) => {
+      if (
+        text &&
+        !product.code.includes(text) &&
+        !product.shortName.includes(text) &&
+        !product.expandedName.includes(text)
+      ) {
+        return false
+      }
+      if (sector !== "all" && (product.sector ?? "业态未从公告读出") !== sector) return false
+      if (exchange !== "all" && product.exchange !== exchange) return false
+      if (manager !== "all" && (product.manager?.name ?? "基金管理人未从公告读出") !== manager) return false
+      return true
+    })
+    return sortProducts(filtered, sortKey, sortDir, checklist.tradeDate, checklist.distributionWindow.start)
+  }, [allProducts, query, sector, exchange, manager, sortKey, sortDir])
+  const groups = useMemo(() => groupByRole(listed, role), [listed, role])
+  const missingCount = allProducts.filter((product) => missingMilestoneFields(product).length > 0).length
+  const completeRelations = relationCompleteCount(allProducts)
   const [chartCode, setChartCode] = useState<string | null>(null)
-  const chartProduct = products.find((product) => product.code === chartCode) ?? null
+  const chartProduct = allProducts.find((product) => product.code === chartCode) ?? null
   const dividends = useMemo(
     () =>
-      products
-        .flatMap((p) =>
-          p.distributions.map((d) => ({
-            ...d,
-            name: p.expandedName,
-            exchange: p.exchange,
+      allProducts
+        .flatMap((product) =>
+          product.distributions.map((row) => ({
+            ...row,
+            name: product.expandedName,
+            exchange: product.exchange,
           }))
         )
         .sort((a, b) => b.exDate?.localeCompare(a.exDate ?? "") || b.announcementDate.localeCompare(a.announcementDate)),
-    [products]
+    [allProducts]
   )
+
+  function onSort(column: SortKey) {
+    if (column === sortKey) {
+      setSortDir((current) => (current === "asc" ? "desc" : "asc"))
+      return
+    }
+    setSortKey(column)
+    setSortDir(column === "change" || column === "yield" || column === "close" || column === "volume" ? "desc" : "asc")
+  }
 
   return (
     <div className="min-h-screen bg-[var(--page)] text-[var(--ink)] tabular-nums">
@@ -394,22 +593,24 @@ export function Board() {
         <header className="flex items-start justify-between gap-2 border-b border-[var(--line)] pb-2">
           <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
             <h1 className="text-sm font-semibold tracking-tight">内地公募 REITs</h1>
-            <p className="text-[11px] text-[var(--muted-ink)]">日终收盘 · 不是实时行情</p>
+            <p className="text-[11px] text-[var(--muted-ink)]">
+              日终收盘 · 交易日 {checklist.tradeDate} · 核对日 {checklist.checkedOn} · 不是实时行情
+            </p>
             <nav className="flex flex-wrap gap-3 text-[11px]">
               <a className="underline-offset-2 hover:underline" href="#market">全市场</a>
               <a className="underline-offset-2 hover:underline" href="#index">主图</a>
               <a className="underline-offset-2 hover:underline" href="#calendars">分红与解禁</a>
-              <a className="underline-offset-2 hover:underline" href="#managers">基金管理人</a>
+              <a className="underline-offset-2 hover:underline" href="#managers">机构</a>
             </nav>
           </div>
           <ThemeSwitch />
         </header>
         <dl className="grid grid-cols-2 gap-px bg-[var(--line)] text-[11px] sm:grid-cols-5">
-          <Stat label="已上市" value={`${products.length}`} detail={`沪 ${checklist.exchanges.SSE.listedCount} · 深 ${checklist.exchanges.SZSE.listedCount}`} />
-          <Stat label="交易日" value={checklist.tradeDate} detail="收盘后" />
-          <Stat label="三类关系已齐" value={`${completeRelations}`} detail="只填了管理人" />
+          <Stat label="已上市" value={`${allProducts.length}`} detail={`沪 ${checklist.exchanges.SSE.listedCount} · 深 ${checklist.exchanges.SZSE.listedCount}`} />
+          <Stat label="交易日" value={checklist.tradeDate} detail="与日K同一天" />
+          <Stat label="三类关系已齐" value={`${completeRelations}`} detail={`共 ${allProducts.length} 只`} />
           <Stat label="本步缺字段" value={`${missingCount}`} detail="只" />
-          <Stat label="核对日" value={checklist.checkedOn} detail="名单已对" />
+          <Stat label="核对日" value={checklist.checkedOn} detail="名单与公告" />
         </dl>
 
         <WatchChart />
@@ -442,9 +643,79 @@ export function Board() {
                   涨红跌绿。上交所成交量是份，深交所成交量是万份，跟各自公开行情的单位一致。
                 </p>
               </div>
-              <ProductCards products={products} onOpenChart={setChartCode} watchlist />
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                <Input
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="代码或简称"
+                  aria-label="按代码或简称筛选"
+                  className="h-8 text-xs"
+                />
+                <select
+                  aria-label="按业态筛选"
+                  value={sector}
+                  onChange={(event) => setSector(event.target.value)}
+                  className="h-8 border border-[var(--line)] bg-[var(--panel)] px-2 text-xs"
+                >
+                  <option value="all">全部业态</option>
+                  {sectors.map((item) => (
+                    <option key={item} value={item}>{item}</option>
+                  ))}
+                </select>
+                <select
+                  aria-label="按交易所筛选"
+                  value={exchange}
+                  onChange={(event) => setExchange(event.target.value as "all" | "SSE" | "SZSE")}
+                  className="h-8 border border-[var(--line)] bg-[var(--panel)] px-2 text-xs"
+                >
+                  <option value="all">全部交易所</option>
+                  <option value="SSE">上交所</option>
+                  <option value="SZSE">深交所</option>
+                </select>
+                <select
+                  aria-label="按基金管理人筛选"
+                  value={manager}
+                  onChange={(event) => setManager(event.target.value)}
+                  className="h-8 border border-[var(--line)] bg-[var(--panel)] px-2 text-xs"
+                >
+                  <option value="all">全部基金管理人</option>
+                  {managerNames.map((item) => (
+                    <option key={item} value={item}>{item}</option>
+                  ))}
+                </select>
+              </div>
+              <p className="text-[11px] text-[var(--muted-ink)]">筛出 {listed.length} 只。窄屏用下面的排序，宽屏点列名。</p>
+              <select
+                aria-label="排序"
+                className="h-8 border border-[var(--line)] bg-[var(--panel)] px-2 text-xs lg:hidden"
+                value={`${sortKey}:${sortDir}`}
+                onChange={(event) => {
+                  const [key, dir] = event.target.value.split(":")
+                  setSortKey(key as SortKey)
+                  setSortDir(dir as SortDir)
+                }}
+              >
+                <option value="code:asc">代码升序</option>
+                <option value="code:desc">代码降序</option>
+                <option value="name:asc">简称升序</option>
+                <option value="change:desc">涨跌幅从高到低</option>
+                <option value="change:asc">涨跌幅从低到高</option>
+                <option value="yield:desc">年化分派率从高到低</option>
+                <option value="yield:asc">年化分派率从低到高</option>
+                <option value="close:desc">收盘从高到低</option>
+                <option value="volume:desc">成交量从高到低</option>
+              </select>
+              {listed.length === 0 ? <p className="text-sm">没有符合筛选的产品。</p> : null}
+              <ProductCards products={listed} onOpenChart={setChartCode} watchlist />
               <div className="hidden border border-[var(--line)] bg-[var(--panel)] lg:block">
-                <ProductTable products={products} onOpenChart={setChartCode} watchlist />
+                <ProductTable
+                  products={listed}
+                  onOpenChart={setChartCode}
+                  watchlist
+                  sortKey={sortKey}
+                  sortDir={sortDir}
+                  onSort={onSort}
+                />
               </div>
             </section>
 
@@ -535,24 +806,36 @@ export function Board() {
 
             <section id="managers" className="space-y-3">
               <div>
-                <h2 className="text-xs font-medium">基金管理人</h2>
+                <h2 className="text-xs font-medium">机构</h2>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  点开一家，名下产品都在，收盘、涨跌幅、成交量和分派率还在。原始权益人和运营管理机构本步未齐，切换留在这一页。
+                  按基金管理人、原始权益人或运营管理机构展开。一名主体下的产品仍带着收盘和分派率。没有从公告读出的名称单独成组。
                 </p>
               </div>
-              <div className="flex flex-wrap gap-2">
-                <Badge>基金管理人 · 可展开</Badge>
-                <Badge variant="outline">原始权益人 · 未齐</Badge>
-                <Badge variant="outline">运营管理机构 · 未齐</Badge>
+              <div className="flex flex-wrap gap-1 text-[11px]" role="group" aria-label="机构分组">
+                {(
+                  [
+                    ["manager", "基金管理人"],
+                    ["sponsor", "原始权益人"],
+                    ["operator", "运营管理机构"],
+                  ] as const
+                ).map(([key, label]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    aria-pressed={role === key}
+                    className={
+                      role === key
+                        ? "bg-[var(--ink)] px-2 py-1 text-[var(--page)]"
+                        : "border border-[var(--line)] px-2 py-1 text-[var(--muted-ink)]"
+                    }
+                    onClick={() => setRole(key)}
+                  >
+                    {label}
+                  </button>
+                ))}
               </div>
-              <Alert>
-                <AlertTitle>原始权益人、运营管理机构未齐</AlertTitle>
-                <AlertDescription>
-                  这两类主体，以及机构持有比例、原始权益人及关联方持有比例，这一步不填。数据结构按多名主体留着空位，不用前十大或新闻去补。
-                </AlertDescription>
-              </Alert>
               <div className="space-y-2">
-                {managers.map((group) => (
+                {groups.map((group) => (
                   <Collapsible key={group.name} className="border border-[var(--line)] bg-[var(--panel)]">
                     <CollapsibleTrigger className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left">
                       <span className="font-medium">{group.name}</span>
@@ -561,7 +844,13 @@ export function Board() {
                     <CollapsibleContent className="border-t">
                       <ProductCards products={group.products} onOpenChart={setChartCode} />
                       <div className="hidden lg:block">
-                        <ProductTable products={group.products} onOpenChart={setChartCode} />
+                        <ProductTable
+                          products={group.products}
+                          onOpenChart={setChartCode}
+                          sortKey={sortKey}
+                          sortDir={sortDir}
+                          onSort={onSort}
+                        />
                       </div>
                     </CollapsibleContent>
                   </Collapsible>

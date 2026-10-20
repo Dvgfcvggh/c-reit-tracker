@@ -1,4 +1,5 @@
 import checklistJson from "@/data/checklist.json"
+import partiesJson from "@/data/parties.json"
 
 export type Distribution = {
   code: string
@@ -18,7 +19,29 @@ export type Party = {
   sourceTitle: string | null
   asOf: string | null
   listName?: string
+  note?: string
 }
+
+export type HoldingDisclosure =
+  | {
+      status: "value"
+      ratio: number
+      approximate?: boolean
+      periodEnd: string
+      periodLabel: string
+      sourceUrl: string
+      sourceTitle: string
+    }
+  | {
+      status: "undisclosed"
+    }
+  | {
+      status: "unparsed"
+      periodEnd: string
+      periodLabel: string
+      sourceUrl: string
+      sourceTitle: string
+    }
 
 export type Product = {
   code: string
@@ -34,8 +57,8 @@ export type Product = {
   manager: Party | null
   originalEquityHolders: Party[]
   operatingManagers: Party[]
-  institutionHolding: null
-  sponsorAffiliateHolding: null
+  institutionHolding: HoldingDisclosure | null
+  sponsorAffiliateHolding: HoldingDisclosure | null
   quote: {
     tradeDate: string
     close: number | null
@@ -115,6 +138,8 @@ export function missingMilestoneFields(product: Product): string[] {
   if (!product.sectorSourceUrl) missing.push("业态来源")
   if (!product.quote.sourceUrl) missing.push("行情来源")
   if (product.quote.close == null) missing.push("收盘")
+  if (product.originalEquityHolders.length === 0) missing.push("原始权益人")
+  if (product.operatingManagers.length === 0) missing.push("运营管理机构")
   return missing
 }
 
@@ -229,4 +254,130 @@ export function groupByManager(products: Product[]): { name: string; products: P
       products: [...rows].sort((a, b) => a.code.localeCompare(b.code)),
     }))
     .sort((a, b) => b.products.length - a.products.length || a.name.localeCompare(b.name, "zh"))
+}
+
+type PartiesFile = {
+  checkedOn: string
+  products: Record<
+    string,
+    {
+      originalEquityHolders?: Party[]
+      operatingManagers?: Party[]
+      institutionHolding?: HoldingDisclosure | null
+      sponsorAffiliateHolding?: HoldingDisclosure | null
+    }
+  >
+}
+
+const parties = partiesJson as PartiesFile
+
+export function applyDisclosures(product: Product): Product {
+  const extra = parties.products[product.code]
+  if (!extra) {
+    return {
+      ...product,
+      institutionHolding: product.institutionHolding ?? { status: "undisclosed" },
+      sponsorAffiliateHolding: product.sponsorAffiliateHolding ?? { status: "undisclosed" },
+    }
+  }
+  return {
+    ...product,
+    originalEquityHolders: extra.originalEquityHolders ?? [],
+    operatingManagers: extra.operatingManagers ?? [],
+    institutionHolding: extra.institutionHolding ?? { status: "undisclosed" },
+    sponsorAffiliateHolding: extra.sponsorAffiliateHolding ?? { status: "undisclosed" },
+  }
+}
+
+export type RoleKey = "manager" | "sponsor" | "operator"
+
+export function groupByRole(products: Product[], role: RoleKey): { name: string; products: Product[] }[] {
+  const map = new Map<string, Product[]>()
+  const missing =
+    role === "manager"
+      ? "基金管理人未从公告读出"
+      : role === "sponsor"
+        ? "原始权益人未从公告读出"
+        : "运营管理机构未从公告读出"
+  for (const product of products) {
+    const partiesForProduct =
+      role === "manager"
+        ? product.manager
+          ? [product.manager]
+          : []
+        : role === "sponsor"
+          ? product.originalEquityHolders
+          : product.operatingManagers
+    const labels = partiesForProduct.length
+      ? partiesForProduct.map((party) => (party.note ? `${party.name}（${party.note}）` : party.name))
+      : [missing]
+    for (const label of labels) {
+      const list = map.get(label) ?? []
+      if (!list.includes(product)) list.push(product)
+      map.set(label, list)
+    }
+  }
+  return [...map.entries()]
+    .map(([name, rows]) => ({
+      name,
+      products: [...rows].sort((a, b) => a.code.localeCompare(b.code)),
+    }))
+    .sort((a, b) => b.products.length - a.products.length || a.name.localeCompare(b.name, "zh"))
+}
+
+export function nextDividend(
+  product: Product,
+  tradeDate: string
+): { kind: "登记" | "除息"; date: string } | null {
+  const upcoming: { kind: "登记" | "除息"; date: string }[] = []
+  for (const row of product.distributions) {
+    if (row.recordDate && row.recordDate >= tradeDate) upcoming.push({ kind: "登记", date: row.recordDate })
+    if (row.exDate && row.exDate >= tradeDate) upcoming.push({ kind: "除息", date: row.exDate })
+  }
+  upcoming.sort((a, b) => a.date.localeCompare(b.date) || a.kind.localeCompare(b.kind, "zh"))
+  return upcoming[0] ?? null
+}
+
+export function nextUnlock(code: string, unlocks: UnlockEvent[], tradeDate: string): UnlockEvent | null {
+  return (
+    unlocks
+      .filter((row) => row.code === code && row.unlockDate >= tradeDate)
+      .sort((a, b) => a.unlockDate.localeCompare(b.unlockDate))[0] ?? null
+  )
+}
+
+export type SortKey = "code" | "name" | "exchange" | "sector" | "close" | "change" | "volume" | "yield" | "manager"
+export type SortDir = "asc" | "desc"
+
+function yieldNumber(product: Product, tradeDate: string, windowStart: string): number | null {
+  const view = yieldView(product, tradeDate, windowStart)
+  return view.kind === "value" ? view.yieldPct : null
+}
+
+function compareNullable(a: number | null, b: number | null, dir: SortDir): number {
+  if (a == null && b == null) return 0
+  if (a == null) return 1
+  if (b == null) return -1
+  return dir === "asc" ? a - b : b - a
+}
+
+export function sortProducts(
+  products: Product[],
+  key: SortKey,
+  dir: SortDir,
+  tradeDate: string,
+  windowStart: string
+): Product[] {
+  const sign = dir === "asc" ? 1 : -1
+  return [...products].sort((a, b) => {
+    if (key === "code") return a.code.localeCompare(b.code) * sign
+    if (key === "name") return a.shortName.localeCompare(b.shortName, "zh") * sign
+    if (key === "exchange") return a.exchange.localeCompare(b.exchange) * sign
+    if (key === "sector") return (a.sector ?? "").localeCompare(b.sector ?? "", "zh") * sign
+    if (key === "manager") return (a.manager?.name ?? "").localeCompare(b.manager?.name ?? "", "zh") * sign
+    if (key === "close") return compareNullable(a.quote.close, b.quote.close, dir)
+    if (key === "change") return compareNullable(a.quote.changePct, b.quote.changePct, dir)
+    if (key === "volume") return compareNullable(a.quote.volume, b.quote.volume, dir)
+    return compareNullable(yieldNumber(a, tradeDate, windowStart), yieldNumber(b, tradeDate, windowStart), dir)
+  })
 }
