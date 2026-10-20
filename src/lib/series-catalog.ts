@@ -26,13 +26,6 @@ type RawSeries = {
 type RawFile = {
   checkedOn: string
   ready: RawSeries[]
-  unavailable: {
-    code: string
-    name: string
-    publisher: string
-    region: string
-    reason: string
-  }[]
 }
 
 const file = raw as RawFile
@@ -51,14 +44,6 @@ export type ReadySeries = {
   note: string
   start: string
   end: string
-}
-
-export type UnavailableSeries = {
-  code: string
-  name: string
-  publisher: string
-  region: string
-  reason: string
 }
 
 function ymd(value: number): string {
@@ -136,11 +121,6 @@ const reitReady: ReadySeries = {
 }
 
 export const readySeries: ReadySeries[] = [reitReady, ...macroReady]
-
-export const unavailableSeries: UnavailableSeries[] = [...file.unavailable].sort((a, b) => {
-  if (a.region === b.region) return a.name.localeCompare(b.name, "zh-CN")
-  return a.region === "中国" ? -1 : 1
-})
 
 export function chartSpecForSeries(code: string): ChartSpec | null {
   if (code === "932047") {

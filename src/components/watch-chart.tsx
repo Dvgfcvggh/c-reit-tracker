@@ -16,7 +16,6 @@ import {
   describeMain,
   labelFor,
   readySeries,
-  unavailableSeries,
 } from "@/lib/series-catalog"
 import {
   clearWatchPrimary,
@@ -250,16 +249,6 @@ export function WatchChart() {
           </ul>
         </CollapsibleContent>
       </Collapsible>
-      <div className="mb-2">
-        <p className="text-[11px] text-[var(--muted-ink)]">没有合规日线，不能加入</p>
-        <ul>
-          {unavailableSeries.map((series) => (
-            <li key={series.code} className="py-0.5 text-[11px] leading-5 text-[var(--muted-ink)]">
-              {series.region} · {series.name} {series.code} · 不可用。{series.reason}
-            </li>
-          ))}
-        </ul>
-      </div>
       <DailyChart spec={main.spec} overlays={overlays} />
     </section>
   )
