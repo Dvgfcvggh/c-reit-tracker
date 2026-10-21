@@ -596,6 +596,7 @@ export function Board() {
             <p className="text-[11px] text-[var(--muted-ink)]">
               日终收盘 · 交易日 {checklist.tradeDate} · 核对日 {checklist.checkedOn} · 不是实时行情
             </p>
+            <p className="text-[11px] text-[var(--muted-ink)]">作者 Dvgfcvggh</p>
             <nav className="flex flex-wrap gap-3 text-[11px]">
               <a className="underline-offset-2 hover:underline" href="#market">全市场</a>
               <a className="underline-offset-2 hover:underline" href="#index">主图</a>
